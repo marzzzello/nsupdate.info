@@ -8,13 +8,14 @@ import dns.message
 from django.core.management.base import BaseCommand
 from django.core.mail import send_mail
 from django.db import transaction
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 
 from nsupdate.main.models import Domain, Host
 from nsupdate.main.dnstools import FQDN, query_ns, NameServerNotAvailable
 from nsupdate.utils.mail import translate_for_user, send_mail_to_user
 
-MSG = _("""\
+MSG = _(
+    """\
 Your domain: %(domain)s (comment: %(comment)s)
 
 Issue: The nameserver of the domain is not reachable and was set to not available
@@ -38,7 +39,8 @@ If you really want that domain to work and you really control that nameserver:
 Alternatively, if you do not use the domain with our service, delete the
 domain entry, so it is removed from our database. This will also remove all
 hosts that were added to this domain (if any).
-""")
+"""
+)
 
 
 LOG_MSG_IS_AVAILABLE = _('Domain %(domain)s is available.')
@@ -60,8 +62,14 @@ def check_dns(domain):
     try:
         query_ns(fqdn, 'SOA', prefer_primary=True)
         queries_ok = True
-    except (dns.resolver.Timeout, dns.resolver.NoNameservers,
-            dns.resolver.NXDOMAIN, dns.resolver.NoAnswer, NameServerNotAvailable, dns.message.UnknownTSIGKey):
+    except (
+        dns.resolver.Timeout,
+        dns.resolver.NoNameservers,
+        dns.resolver.NXDOMAIN,
+        dns.resolver.NoAnswer,
+        NameServerNotAvailable,
+        dns.message.UnknownTSIGKey,
+    ):
         # note: currently the domain is also set to unavailable as a
         # side effect in query_ns()
         queries_ok = False
@@ -94,21 +102,27 @@ class Command(BaseCommand):
     help = 'deal with domains'
 
     def add_arguments(self, parser):
-        parser.add_argument('--check',
-                            action='store_true',
-                            dest='check',
-                            default=False,
-                            help='check whether nameserver for domain is reachable and answers queries')
-        parser.add_argument('--notify-user',
-                            action='store_true',
-                            dest='notify_user',
-                            default=False,
-                            help='notify the user by email when domain gets flagged as unavailable')
-        parser.add_argument('--stale-check',
-                            action='store_true',
-                            dest='stale_check',
-                            default=False,
-                            help='check whether domain is available or has hosts, delete if not')
+        parser.add_argument(
+            '--check',
+            action='store_true',
+            dest='check',
+            default=False,
+            help='check whether nameserver for domain is reachable and answers queries',
+        )
+        parser.add_argument(
+            '--notify-user',
+            action='store_true',
+            dest='notify_user',
+            default=False,
+            help='notify the user by email when domain gets flagged as unavailable',
+        )
+        parser.add_argument(
+            '--stale-check',
+            action='store_true',
+            dest='stale_check',
+            default=False,
+            help='check whether domain is available or has hosts, delete if not',
+        )
 
     def handle(self, *args, **options):
         check = options['check']
@@ -125,15 +139,14 @@ class Command(BaseCommand):
                         d.available = False  # see comment in check_dns()
                         d.public = False
                         if notify_user:
-                            subject, msg = translate_for_user(
-                                creator,
-                                _("issue with your domain %(domain)s"),
-                                MSG
-                            )
+                            subject, msg = translate_for_user(creator, _("issue with your domain %(domain)s"), MSG)
                             subject = subject % dict(domain=domain)
                             msg = msg % dict(domain=domain, comment=comment)
                             send_mail_to_user(creator, subject, msg)
-                        msg = "setting unavailable flag for domain %s (created by %s)\n" % (domain, creator,)
+                        msg = "setting unavailable flag for domain %s (created by %s)\n" % (
+                            domain,
+                            creator,
+                        )
                         self.stdout.write(msg)
                     d.save()
                 if stale_check:

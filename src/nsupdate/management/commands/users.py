@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 
 from nsupdate.main.models import Host, Domain
 
@@ -58,11 +58,13 @@ class Command(BaseCommand):
     help = 'deal with users'
 
     def add_arguments(self, parser):
-        parser.add_argument('--stale-check',
-                            action='store_true',
-                            dest='stale_check',
-                            default=False,
-                            help='check whether user has logged in recently and has hosts or domains, delete if not')
+        parser.add_argument(
+            '--stale-check',
+            action='store_true',
+            dest='stale_check',
+            default=False,
+            help='check whether user has logged in recently and has hosts or domains, delete if not',
+        )
 
     def handle(self, *args, **options):
         def print_stats(when):

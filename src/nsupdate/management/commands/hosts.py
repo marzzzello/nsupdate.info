@@ -7,7 +7,7 @@ from datetime import datetime
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 
 from nsupdate.main.models import Host
 from nsupdate.utils.mail import translate_for_user, send_mail_to_user
@@ -25,13 +25,16 @@ LOG_MSG_STALE = _("%(host)s has not seen IP updates since a long time, staleness
 LOG_MSG_UNAVAILABLE = _("%(host)s IP has still not been updated, staleness: %(staleness)d -> made host unavailable.")
 LOG_MSG_DELETE = _("%(host)s IP has still not been updated, staleness: %(staleness)d -> deleted host.")
 
-EMAIL_MSG_START = _("""\
+EMAIL_MSG_START = _(
+    """\
 Your host: %(host)s (comment: %(comment)s)
 
 Issue: \
-""")
+"""
+)
 
-EMAIL_MSG_END = _("""
+EMAIL_MSG_END = _(
+    """
 
 Explanation:
 You created the host on our service, but it has not been updated for a very long time.
@@ -61,9 +64,11 @@ Resolution:
 Hint: to avoid this issue for static or mostly-static IP hosts, consider
 sending 1 unconditional update every month. some dyndns2 compatible updaters
 can do that, too.
-""")
+"""
+)
 
-EMAIL_MSG_END_DELETED = _("""
+EMAIL_MSG_END_DELETED = _(
+    """
 
 Explanation:
 You created the host on our service, but it has not been updated for a very long time.
@@ -73,7 +78,8 @@ Thus, we assume that you do not need the host any more and have DELETED it.
 
 Feel free to re-create it on our service in case you need it again at some
 time.
-""")
+"""
+)
 
 
 def check_staleness(h):
@@ -132,16 +138,20 @@ class Command(BaseCommand):
     help = 'deal with hosts'
 
     def add_arguments(self, parser):
-        parser.add_argument('--stale-check',
-                            action='store_true',
-                            dest='stale_check',
-                            default=False,
-                            help='check whether the host has been updated recently, increase staleness counter if not')
-        parser.add_argument('--notify-user',
-                            action='store_true',
-                            dest='notify_user',
-                            default=False,
-                            help='notify the user by email when staleness counter increases')
+        parser.add_argument(
+            '--stale-check',
+            action='store_true',
+            dest='stale_check',
+            default=False,
+            help='check whether the host has been updated recently, increase staleness counter if not',
+        )
+        parser.add_argument(
+            '--notify-user',
+            action='store_true',
+            dest='notify_user',
+            default=False,
+            help='notify the user by email when staleness counter increases',
+        )
 
     def handle(self, *args, **options):
         stale_check = options['stale_check']
@@ -154,11 +164,7 @@ class Command(BaseCommand):
                     creator = h.created_by
                     staleness, email_msg, log_msg = check_staleness(h)
                     if email_msg and notify_user:
-                        subject, msg = translate_for_user(
-                            creator,
-                            _("issue with your host %(host)s"),
-                            email_msg
-                        )
+                        subject, msg = translate_for_user(creator, _("issue with your host %(host)s"), email_msg)
                         subject = subject % dict(host=host)
                         email_msg = email_msg % dict(host=host, staleness=staleness, comment=comment)
                         send_mail_to_user(creator, subject, email_msg)

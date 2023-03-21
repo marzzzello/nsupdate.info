@@ -6,7 +6,7 @@ form definitions (which fields are available, order, autofocus, ...)
 import binascii
 
 from django import forms
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 
 from .models import Host, RelatedHost, Domain, ServiceUpdaterHostConfig
 from .dnstools import check_domain, NameServerNotAvailable
@@ -78,30 +78,36 @@ class EditDomainForm(forms.ModelForm):
             try:
                 check_domain(self.instance.name)
 
-            except (NameServerNotAvailable, ):
+            except (NameServerNotAvailable,):
                 raise forms.ValidationError(
-                    _("Failed to add/delete host connectivity-test.%(domain)s, check your DNS server configuration. "
-                      "This is a requirement for setting the available flag."),
+                    _(
+                        "Failed to add/delete host connectivity-test.%(domain)s, check your DNS server configuration. "
+                        "This is a requirement for setting the available flag."
+                    ),
                     code='invalid',
-                    params={'domain': self.instance.name}
+                    params={'domain': self.instance.name},
                 )
 
         if cleaned_data['public'] and not cleaned_data['available']:
-            raise forms.ValidationError(
-                _("Domain must be available to be public"),
-                code='invalid')
+            raise forms.ValidationError(_("Domain must be available to be public"), code='invalid')
 
     class Meta(object):
         model = Domain
-        fields = ['comment', 'nameserver_ip', 'nameserver2_ip', 'public', 'available',
-                  'nameserver_update_algorithm', 'nameserver_update_secret']
+        fields = [
+            'comment',
+            'nameserver_ip',
+            'nameserver2_ip',
+            'public',
+            'available',
+            'nameserver_update_algorithm',
+            'nameserver_update_secret',
+        ]
 
 
 class CreateUpdaterHostConfigForm(forms.ModelForm):
     class Meta(object):
         model = ServiceUpdaterHostConfig
-        fields = ['service', 'hostname', 'name', 'password',
-                  'give_ipv4', 'give_ipv6', 'comment']
+        fields = ['service', 'hostname', 'name', 'password', 'give_ipv4', 'give_ipv6', 'comment']
         widgets = {
             'hostname': forms.widgets.TextInput(attrs=dict(autofocus=None)),
         }
@@ -110,5 +116,4 @@ class CreateUpdaterHostConfigForm(forms.ModelForm):
 class EditUpdaterHostConfigForm(forms.ModelForm):
     class Meta(object):
         model = ServiceUpdaterHostConfig
-        fields = ['hostname', 'comment', 'name', 'password',
-                  'give_ipv4', 'give_ipv6']
+        fields = ['hostname', 'comment', 'name', 'password', 'give_ipv4', 'give_ipv6']
