@@ -2,15 +2,14 @@
 top-level url dispatching
 """
 
-import six
-
 from django.conf import settings
-from django.conf.urls import include, url
+from django.conf.urls import include
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.conf.urls.static import static
 from django.http import HttpResponse
 from django.views.generic import RedirectView
+from django.urls import path
 
 
 def remember_me_login(request, *args, **kw):
@@ -22,29 +21,33 @@ def remember_me_login(request, *args, **kw):
     if request.method == 'POST':
         if request.POST.get('remember_me'):
             request.session.set_expiry(settings.SESSION_COOKIE_AGE)
-    return auth_views.login(request, *args, **kw)
+    return auth_views.LoginView.as_view(*args, **kw)(request, *args, **kw)
 
 
 urlpatterns = [
-    url('', include('social_django.urls', namespace='social')),
-    url(r'^accounts/', include('nsupdate.login.urls')),
+    path('', include('social_django.urls', namespace='social')),
+    path('accounts/', include('nsupdate.login.urls')),
     # registration and user settings
-    url(r'^account/', include('nsupdate.accounts.urls')),
+    path('account/', include('nsupdate.accounts.urls')),
     # https://wicg.github.io/change-password-url/index.html
-    url(r'^.well-known/change-password$', RedirectView.as_view(pattern_name='account_settings', permanent=False)),
-    url(r'^admin/', include((admin.site.get_urls(), 'admin'), namespace='admin')),
-    url(r'^i18n/', include('django.conf.urls.i18n')),
-    url(r'^', include('nsupdate.main.urls')),
+    path('.well-known/change-password', RedirectView.as_view(pattern_name='account_settings', permanent=False)),
+    path('admin/', admin.site.urls, name='admin'),
+    path('i18n/', include('django.conf.urls.i18n')),
+    path('', include('nsupdate.main.urls')),
 ]
 
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
     import debug_toolbar
-    urlpatterns += [url(r'^__debug__/', include(debug_toolbar.urls)), ]
+
+    urlpatterns += [
+        path('__debug__/', include(debug_toolbar.urls)),
+    ]
 
 
 # we have expensive context processors and do not want to invoke them for the
 # http error views, so we must not use templates (nor the django default views).
+
 
 def http_error(request, status, exception=None):
     if exception is not None:
@@ -55,7 +58,7 @@ def http_error(request, status, exception=None):
         except (AttributeError, IndexError):
             pass
         else:
-            if isinstance(message, six.text_type):
+            if isinstance(message, str):
                 exception_repr = message
     else:
         # we do not have an exception for 500
