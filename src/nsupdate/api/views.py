@@ -4,6 +4,7 @@ views for the (usually non-interactive, automated) web api
 """
 
 import logging
+
 logger = logging.getLogger(__name__)
 
 import json
@@ -22,9 +23,17 @@ from django.utils.decorators import method_decorator
 
 from ..utils import log, ddns_client
 from ..main.models import Host
-from ..main.dnstools import (FQDN, update, delete, check_ip, put_ip_into_session,
-                             SameIpError, DnsUpdateError, NameServerNotAvailable)
-from ..main.iptools import normalize_ip
+from ..main.dnstools import (
+    FQDN,
+    update,
+    delete,
+    check_ip,
+    put_ip_into_session,
+    SameIpError,
+    DnsUpdateError,
+    NameServerNotAvailable,
+)
+from ..main.iptools import get_client_ip_normalized
 
 
 def Response(content, status=200):
@@ -47,7 +56,7 @@ def myip_view(request, logger=None):
     """
     # Note: keeping this as a function-based view, as it is frequently used -
     # maybe it is slightly more efficient than class-based.
-    ipaddr = normalize_ip(request.META['REMOTE_ADDR'])
+    ipaddr = get_client_ip_normalized(request)
     logger.debug("detected remote ip address: %s" % ipaddr)
     return Response(ipaddr)
 
@@ -68,7 +77,7 @@ class DetectIpView(View):
         # so the session cookie is not received here - thus we access it via
         # the sessionid:
         s = engine.SessionStore(session_key=sessionid)
-        ipaddr = normalize_ip(request.META['REMOTE_ADDR'])
+        ipaddr = get_client_ip_normalized(request)
         # as this is NOT the session automatically established and
         # also saved by the framework, we need to use save=True here
         put_ip_into_session(s, ipaddr, save=True)
@@ -93,7 +102,7 @@ class AjaxGetIps(View):
             ipv6=request.session.get('ipv6', ''),
             ipv6_rdns=request.session.get('ipv6_rdns', ''),
         )
-        logger.debug("ajax_get_ips response: %r" % (response, ))
+        logger.debug("ajax_get_ips response: %r" % (response,))
         return HttpResponse(json.dumps(response), content_type='application/json')
 
 
@@ -106,7 +115,7 @@ def basic_challenge(realm, content='Authorization Required'):
     :return: HttpResponse object
     """
     response = Response(content)
-    response['WWW-Authenticate'] = 'Basic realm="%s"' % (realm, )
+    response['WWW-Authenticate'] = 'Basic realm="%s"' % (realm,)
     response.status_code = 401
     return response
 
@@ -148,18 +157,21 @@ def check_api_auth(username, password, logger=None):
         host = Host.get_by_fqdn(fqdn)
     except ValueError:
         # logging this at debug level because otherwise it fills our logs...
-        logger.debug('%s - received bad credentials (auth username == dyndns hostname not in our hosts DB)' % (fqdn, ))
+        logger.debug('%s - received bad credentials (auth username == dyndns hostname not in our hosts DB)' % (fqdn,))
         return None
     if host is not None:
         ok = check_password(password, host.update_secret)
         success_msg = ('failure', 'success')[ok]
-        msg = "api authentication %s. [hostname: %s (given in basic auth)]" % (success_msg, fqdn, )
+        msg = "api authentication %s. [hostname: %s (given in basic auth)]" % (
+            success_msg,
+            fqdn,
+        )
         host.register_api_auth_result(msg, fault=not ok)
         if ok:
             return host
         # in case this fills our logs and we never see valid credentials, we can just kill
         # the DB entry and this will fail earlier and get logged at debug level, see above.
-        logger.warning('%s - received bad credentials (password does not match)' % (fqdn, ))
+        logger.warning('%s - received bad credentials (password does not match)' % (fqdn,))
     return None
 
 
@@ -215,7 +227,7 @@ class NicUpdateView(View):
         auth = request.META.get('HTTP_AUTHORIZATION')
         if auth is None:
             # logging this at debug level because otherwise it fills our logs...
-            logger.debug('%s - received no auth' % (hostname, ))
+            logger.debug('%s - received no auth' % (hostname,))
             return basic_challenge("authenticate to update DNS", 'badauth')
         username, password = basic_authenticate(auth)
         if '.' not in username:  # username MUST be the fqdn
@@ -237,8 +249,10 @@ class NicUpdateView(View):
             else:
                 # maybe this host is owned by same person, but we can't know.
                 result = 'nohost'  # or 'badauth'?
-            msg = ("rejecting to update wrong host %s (given in query string) "
-                   "[instead of %s (given in basic auth)]" % (hostname, username))
+            msg = (
+                "rejecting to update wrong host %s (given in query string) "
+                "[instead of %s (given in basic auth)]" % (hostname, username)
+            )
             logger.warning(msg)
             host.register_client_result(msg, fault=True)
             return Response(result)
@@ -250,7 +264,7 @@ class NicUpdateView(View):
             return Response('badagent')
         ipaddr = request.GET.get('myip')
         if not ipaddr:  # None or ''
-            ipaddr = normalize_ip(request.META.get('REMOTE_ADDR'))
+            ipaddr = get_client_ip_normalized(request)
         secure = request.is_secure()
         return _update_or_delete(host, ipaddr, secure, logger=logger, _delete=delete)
 
@@ -274,7 +288,6 @@ class NicDeleteView(NicUpdateView):
 
 
 class AuthorizedNicUpdateView(View):
-
     @method_decorator(login_required)
     def dispatch(self, *args, **kwargs):
         return super(AuthorizedNicUpdateView, self).dispatch(*args, **kwargs)
@@ -298,20 +311,25 @@ class AuthorizedNicUpdateView(View):
             return Response('nohost')
         host = check_session_auth(request.user, hostname)
         if host is None:
-            logger.warning('%s - is not owned by user: %s' % (hostname, request.user.username, ))
+            logger.warning(
+                '%s - is not owned by user: %s'
+                % (
+                    hostname,
+                    request.user.username,
+                )
+            )
             return Response('nohost')
         logger.info("authenticated by session as user %s, creator of host %s" % (request.user.username, hostname))
         # note: we do not check the user agent here as this is interactive
         # and logged-in usage - thus misbehaved user agents are no problem.
         ipaddr = request.GET.get('myip')
         if not ipaddr:  # None or empty string
-            ipaddr = normalize_ip(request.META.get('REMOTE_ADDR'))
+            ipaddr = get_client_ip_normalized(request)
         secure = request.is_secure()
         return _update_or_delete(host, ipaddr, secure, logger=logger, _delete=delete)
 
 
 class AuthorizedNicDeleteView(AuthorizedNicUpdateView):
-
     @log.logger(__name__)
     def get(self, request, logger=None, delete=True):
         """
@@ -340,13 +358,19 @@ def _update_or_delete(host, ipaddr, secure=False, logger=None, _delete=False):
     # checks. it also avoids some code duplication if done here:
     fqdn = host.get_fqdn()
     if host.abuse or host.abuse_blocked:
-        msg = '%s - received %s for host with abuse / abuse_blocked flag set' % (fqdn, mode, )
+        msg = '%s - received %s for host with abuse / abuse_blocked flag set' % (
+            fqdn,
+            mode,
+        )
         logger.warning(msg)
         host.register_client_result(msg, fault=False)
         return Response('abuse')
     if not host.available:
         # not available is like it doesn't exist
-        msg = '%s - received %s for unavailable host' % (fqdn, mode, )
+        msg = '%s - received %s for unavailable host' % (
+            fqdn,
+            mode,
+        )
         logger.warning(msg)
         host.register_client_result(msg, fault=False)
         return Response('nohost')
@@ -389,8 +413,7 @@ def _update_or_delete(host, ipaddr, secure=False, logger=None, _delete=False):
         return Response('nochg %s' % ipaddr)
     except (DnsUpdateError, NameServerNotAvailable) as e:
         msg = str(e)
-        msg = '%s - received %s that resulted in a dns error [%s], ip: %s tls: %r' % (
-            fqdn, mode, msg, ipaddr, secure)
+        msg = '%s - received %s that resulted in a dns error [%s], ip: %s tls: %r' % (fqdn, mode, msg, ipaddr, secure)
         logger.error(msg)
         host.register_server_result(msg, fault=True)
         return Response('dnserr')
@@ -435,7 +458,7 @@ def _on_update_success(host, fqdn, kind, ipaddr, secure, logger):
                 if not _delete:
                     logger.info("updating related host %s -> %s" % (rh_fqdn, rh_ipaddr))
                 else:
-                    logger.info("deleting related host %s" % (rh_fqdn, ))
+                    logger.info("deleting related host %s" % (rh_fqdn,))
                 try:
                     if not _delete:
                         update(rh_fqdn, rh_ipaddr)
@@ -449,22 +472,38 @@ def _on_update_success(host, fqdn, kind, ipaddr, secure, logger):
                     msg = str(e)
                     if not _delete:
                         msg = '%s - related hosts update that resulted in a dns error [%s], ip: %s tls: %r' % (
-                            rh_fqdn, msg, rh_ipaddr, secure)
+                            rh_fqdn,
+                            msg,
+                            rh_ipaddr,
+                            secure,
+                        )
                     else:
                         msg = '%s - related hosts deletion that resulted in a dns error [%s], tls: %r' % (
-                            rh_fqdn, msg, secure)
+                            rh_fqdn,
+                            msg,
+                            secure,
+                        )
                     logger.error(msg)
                     host.register_server_result(msg, fault=True)
 
     # now check if there are other services we shall relay updates to:
     for hc in host.serviceupdaterhostconfigs.all():
-        if (kind == 'ipv4' and hc.give_ipv4 and hc.service.accept_ipv4
-            or
-            kind == 'ipv6' and hc.give_ipv6 and hc.service.accept_ipv6):
+        if (
+            kind == 'ipv4'
+            and hc.give_ipv4
+            and hc.service.accept_ipv4
+            or kind == 'ipv6'
+            and hc.give_ipv6
+            and hc.service.accept_ipv6
+        ):
             kwargs = dict(
-                name=hc.name, password=hc.password,
-                hostname=hc.hostname, myip=ipaddr,
-                server=hc.service.server, path=hc.service.path, secure=hc.service.secure,
+                name=hc.name,
+                password=hc.password,
+                hostname=hc.hostname,
+                myip=ipaddr,
+                server=hc.service.server,
+                path=hc.service.path,
+                secure=hc.service.secure,
             )
             try:
                 ddns_client.dyndns2_update(**kwargs)

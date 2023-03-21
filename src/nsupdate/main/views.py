@@ -22,10 +22,18 @@ from django import template
 from django.utils.timezone import now
 
 from . import dnstools
-from .iptools import normalize_ip
+from .iptools import get_client_ip_normalized
 
-from .forms import (CreateHostForm, EditHostForm, CreateRelatedHostForm, EditRelatedHostForm,
-                    CreateDomainForm, EditDomainForm, CreateUpdaterHostConfigForm, EditUpdaterHostConfigForm)
+from .forms import (
+    CreateHostForm,
+    EditHostForm,
+    CreateRelatedHostForm,
+    EditRelatedHostForm,
+    CreateDomainForm,
+    EditDomainForm,
+    CreateUpdaterHostConfigForm,
+    EditUpdaterHostConfigForm,
+)
 from .models import Host, RelatedHost, Domain, ServiceUpdaterHostConfig
 
 
@@ -91,7 +99,11 @@ class CustomTemplateView(TemplateView):
     def dispatch(self, *args, **kwargs):
         self.template_name = 'main/custom/%s' % kwargs.get('template')
         try:
-            template.loader.select_template([self.template_name, ])
+            template.loader.select_template(
+                [
+                    self.template_name,
+                ]
+            )
             return super(CustomTemplateView, self).dispatch(*args, **kwargs)
         except template.TemplateDoesNotExist:
             raise Http404
@@ -114,8 +126,7 @@ class StatusView(TemplateView):
         return super(StatusView, self).dispatch(*args, **kwargs)
 
     def get_context_data(self, **kwargs):
-        context = super(
-            StatusView, self).get_context_data(**kwargs)
+        context = super(StatusView, self).get_context_data(**kwargs)
         context['nav_status'] = True
         context['domains_total'] = Domain.objects.count()
         context['domains_unavailable'] = Domain.objects.filter(available=False).count()
@@ -191,15 +202,35 @@ class OverviewView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super(OverviewView, self).get_context_data(**kwargs)
         context['nav_overview'] = True
-        context['hosts'] = Host.objects.filter(created_by=self.request.user).select_related("domain")\
-            .only("name", "comment", "available", "client_faults", "server_faults", "abuse_blocked", "abuse",
-                  "last_update_ipv4", "tls_update_ipv4", "last_update_ipv6", "tls_update_ipv6", "domain__name")
-        context['your_domains'] = Domain.objects.filter(
-            created_by=self.request.user).select_related("created_by__profile")\
+        context['hosts'] = (
+            Host.objects.filter(created_by=self.request.user)
+            .select_related("domain")
+            .only(
+                "name",
+                "comment",
+                "available",
+                "client_faults",
+                "server_faults",
+                "abuse_blocked",
+                "abuse",
+                "last_update_ipv4",
+                "tls_update_ipv4",
+                "last_update_ipv6",
+                "tls_update_ipv6",
+                "domain__name",
+            )
+        )
+        context['your_domains'] = (
+            Domain.objects.filter(created_by=self.request.user)
+            .select_related("created_by__profile")
             .only("name", "public", "available", "comment", "created_by__username")
-        context['public_domains'] = Domain.objects.filter(
-            public=True).exclude(created_by=self.request.user).select_related("created_by")\
+        )
+        context['public_domains'] = (
+            Domain.objects.filter(public=True)
+            .exclude(created_by=self.request.user)
+            .select_related("created_by")
             .only("name", "public", "available", "comment", "created_by__username")
+        )
         return context
 
 
@@ -217,14 +248,13 @@ class AddHostView(CreateView):
 
     def get_form(self, form_class=None):
         form = super(AddHostView, self).get_form(form_class)
-        form.fields['domain'].queryset = Domain.objects.filter(
-            Q(created_by=self.request.user) | Q(public=True))
+        form.fields['domain'].queryset = Domain.objects.filter(Q(created_by=self.request.user) | Q(public=True))
         return form
 
     def form_valid(self, form):
         self.object = form.save(commit=False)
         try:
-            dnstools.add(self.object.get_fqdn(), normalize_ip(self.request.META['REMOTE_ADDR']))
+            dnstools.add(self.object.get_fqdn(), get_client_ip_normalized(self.request))
         except dnstools.Timeout:
             success, level, msg = False, messages.ERROR, 'Timeout - communicating to name server failed.'
         except dnstools.NameServerNotAvailable:
@@ -286,7 +316,7 @@ class HostView(UpdateView):
     def get_context_data(self, **kwargs):
         context = super(HostView, self).get_context_data(**kwargs)
         context['nav_overview'] = True
-        context['remote_addr'] = normalize_ip(self.request.META['REMOTE_ADDR'])
+        context['remote_addr'] = get_client_ip_normalized(self.request)
         return context
 
 
@@ -348,7 +378,7 @@ class AddRelatedHostView(CreateView):
         return super(AddRelatedHostView, self).dispatch(*args, **kwargs)
 
     def get_success_url(self):
-        return reverse('related_host_overview', args=(self.object.main_host.pk, ))
+        return reverse('related_host_overview', args=(self.object.main_host.pk,))
 
     def get_form(self, form_class=None):
         form = super(AddRelatedHostView, self).get_form(form_class)
@@ -383,7 +413,7 @@ class RelatedHostView(UpdateView):
         return super(RelatedHostView, self).dispatch(*args, **kwargs)
 
     def get_success_url(self):
-        return reverse('related_host_overview', args=(self.object.main_host.pk, ))
+        return reverse('related_host_overview', args=(self.object.main_host.pk,))
 
     def form_valid(self, form):
         self.object = form.save(commit=False)
@@ -422,7 +452,7 @@ class DeleteRelatedHostView(DeleteView):
         return obj
 
     def get_success_url(self):
-        return reverse('related_host_overview', args=(self.object.main_host.pk, ))
+        return reverse('related_host_overview', args=(self.object.main_host.pk,))
 
     def get_context_data(self, **kwargs):
         context = super(DeleteRelatedHostView, self).get_context_data(**kwargs)
@@ -529,7 +559,7 @@ class UpdaterHostConfigOverviewView(CreateView):
         return super(UpdaterHostConfigOverviewView, self).dispatch(*args, **kwargs)
 
     def get_success_url(self):
-        return reverse('updater_hostconfig_overview', args=(self.__host.pk, ))
+        return reverse('updater_hostconfig_overview', args=(self.__host.pk,))
 
     def form_valid(self, form):
         self.object = form.save(commit=False)
@@ -540,8 +570,7 @@ class UpdaterHostConfigOverviewView(CreateView):
         return HttpResponseRedirect(self.get_success_url())
 
     def get_context_data(self, **kwargs):
-        context = super(
-            UpdaterHostConfigOverviewView, self).get_context_data(**kwargs)
+        context = super(UpdaterHostConfigOverviewView, self).get_context_data(**kwargs)
         context['updater_configs'] = ServiceUpdaterHostConfig.objects.filter(host=self.__host)
         return context
 
@@ -604,6 +633,7 @@ class RobotsTxtView(View):
     Dynamically serve robots.txt content.
     If you like, you can optimize this by statically serving this by your web server.
     """
+
     def get(self, request):
         content = """\
 User-agent: *
@@ -641,7 +671,9 @@ def csrf_failure_view(request, reason):  # pragma: no cover (hard to test)
 This site needs cookies (for CSRF protection, for keeping your session after login).
 
 Please enable cookies in your browser (or otherwise make sure the CSRF cookie can be set).
-""" % dict(reason=reason)
+""" % dict(
+            reason=reason
+        )
         status = 200
     else:
         content = """\
@@ -651,6 +683,8 @@ CSRF verification failure.
 
 Either you are trying to access this site in 'unusual' ways (then please stop doing that), or
 you found an issue in the code (then please file an issue for this and tell how you got here).
-""" % dict(reason=reason)
+""" % dict(
+            reason=reason
+        )
         status = 403
     return HttpResponse(content, status=status, content_type="text/plain")
